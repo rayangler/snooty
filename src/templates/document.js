@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import PropTypes from 'prop-types';
 import Footer from '../components/Footer';
 import { getNestedValue } from '../utils/get-nested-value';
 import Breadcrumbs from '../components/Breadcrumbs';
 import InternalPageNav from '../components/InternalPageNav';
 import Sidebar from '../components/Sidebar';
+import { TabContext } from '../components/tab-context';
+import TabSelectors from '../components/TabSelectors';
+import RightPanel from '../components/RightPanel';
 import { useWindowSize } from '../hooks/use-window-size.js';
 import style from '../styles/navigation.module.css';
 import { isBrowser } from '../utils/is-browser.js';
@@ -28,6 +31,8 @@ const Document = ({
   const toggleLeftColumn = () => {
     setShowLeftColumn(!showLeftColumn);
   };
+
+  const { selectors } = useContext(TabContext);
 
   return (
     <div className="content">
@@ -64,6 +69,11 @@ const Document = ({
           </div>
         </div>
       </div>
+      {selectors && (
+        <RightPanel>
+          <TabSelectors />
+        </RightPanel>
+      )}
     </div>
   );
 };
