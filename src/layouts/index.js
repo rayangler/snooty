@@ -1,9 +1,9 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import loadable from '@loadable/component';
 import { Global, css } from '@emotion/core';
 import SiteMetadata from '../components/site-metadata';
-import { TabContext, TabProvider } from '../components/tab-context';
+import { TabProvider } from '../components/tab-context';
 import { findAllKeyValuePairs } from '../utils/find-all-key-value-pairs';
 import { getNestedValue } from '../utils/get-nested-value';
 import { getPlaintext } from '../utils/get-plaintext';
@@ -14,72 +14,75 @@ import Navbar from '../components/Navbar';
 
 const Widgets = loadable(() => import('../components/Widgets'));
 
-// They are used infrequently, but here we match an anonymous footnote to its reference.
-// The nth footnote on a page is associated with the nth reference on the page.
-const getAnonymousFootnoteReferences = (nodes, index) => {
-  const footnoteReferences = findAllKeyValuePairs(nodes, 'type', 'footnote_reference');
-  return getNestedValue(
-    [index, 'id'],
-    footnoteReferences.filter(node => !Object.prototype.hasOwnProperty.call(node, 'refname'))
-  );
-};
+export default class DefaultLayout extends Component {
+  constructor(props) {
+    super(props);
 
-// Find all footnote_reference nodes associated with a given footnote by their refname
-const getNamedFootnoteReferences = (nodes, refname) => {
-  const footnoteReferences = findAllKeyValuePairs(nodes, 'type', 'footnote_reference');
-  return footnoteReferences.filter(node => node.refname === refname).map(node => node.id);
-};
+    this.preprocessPageNodes();
+  }
 
-/*
- * Identify the footnotes on a page and all footnote_reference nodes that refer to them
- *
- * Returns a map wherein each key is the footnote name, and each value is an object containing:
- * - labels: the numerical label for the footnote
- * - references: a list of the ids that refer to this footnote
- */
-const getFootnotes = nodes => {
-  const footnotes = findAllKeyValuePairs(nodes, 'type', 'footnote');
-  return footnotes.reduce((map, footnote, index) => {
-    // Track how many anonymous footnotes are on the page so that we can correctly associate footnotes and references
-    let anonymousCount = 0;
-    if (footnote.name) {
-      // Find references associated with a named footnote
-      // eslint-disable-next-line no-param-reassign
-      map[footnote.name] = {
-        label: index + 1,
-        references: getNamedFootnoteReferences(nodes, footnote.name),
-      };
-    } else {
-      // Find references associated with an anonymous footnote
-      // eslint-disable-next-line no-param-reassign
-      map[footnote.id] = {
-        label: index + 1,
-        references: [getAnonymousFootnoteReferences(nodes, anonymousCount)],
-      };
-      anonymousCount += 1;
-    }
-    return map;
-  }, {});
-};
+  preprocessPageNodes = () => {
+    const { pageContext } = this.props;
+    const pageNodes = getNestedValue(['page', 'ast', 'children'], pageContext) || [];
 
-const DefaultLayout = ({ children, pageContext }) => {
-  const pageNodes = getNestedValue(['page', 'ast', 'children'], pageContext) || [];
-
-  const [footnotes, setFootnotes] = useState({});
-
-  useEffect(() => {
     // Map all footnotes and their references that appear on the page
-    setFootnotes(getFootnotes(pageNodes));
-  }, [pageNodes]);
+    this.footnotes = this.getFootnotes(pageNodes);
 
-  useEffect(() => {
     // Standardize cssclass nodes that appear on the page
-    normalizeCssClassNodes(pageNodes, 'name', 'cssclass');
-  }, [pageNodes]);
+    this.normalizeCssClassNodes(pageNodes, 'name', 'cssclass');
+  };
+
+  /*
+   * Identify the footnotes on a page and all footnote_reference nodes that refer to them
+   *
+   * Returns a map wherein each key is the footnote name, and each value is an object containing:
+   * - labels: the numerical label for the footnote
+   * - references: a list of the footnote reference ids that refer to this footnote
+   */
+  getFootnotes = nodes => {
+    const footnotes = findAllKeyValuePairs(nodes, 'type', 'footnote');
+    const footnoteReferences = findAllKeyValuePairs(nodes, 'type', 'footnote_reference');
+    // We label our footnotes by their index, regardless of their names to
+    // circumvent cases such as [[1], [#], [2], ...]
+    return footnotes.reduce((map, footnote, index) => {
+      if (footnote.name) {
+        // Find references associated with a named footnote
+        // eslint-disable-next-line no-param-reassign
+        map[footnote.name] = {
+          label: index + 1,
+          references: this.getNamedFootnoteReferences(footnoteReferences, footnote.name),
+        };
+      } else {
+        // Find references associated with an anonymous footnote
+        // Replace potentially broken anonymous footnote ids
+        footnote.id = `${index + 1}`;
+        // eslint-disable-next-line no-param-reassign
+        map[footnote.id] = {
+          label: index + 1,
+          references: [this.getAnonymousFootnoteReferences(index)],
+        };
+      }
+      return map;
+    }, {});
+  };
+
+  // Find all footnote_reference node IDs associated with a given footnote by
+  // that footnote's refname
+  getNamedFootnoteReferences = (footnoteReferences, refname) => {
+    return footnoteReferences.filter(node => node.refname === refname).map(node => node.id);
+  };
+
+  // They are used infrequently, but here we match an anonymous footnote to its reference.
+  // The nth footnote on a page is associated with the nth reference on the page. Since
+  // anon footnotes and footnote references are anonymous, we assume a 1:1 pairing, and
+  // have no need to query nodes
+  getAnonymousFootnoteReferences = index => {
+    return `id${index + 1}`;
+  };
 
   // Modify the AST so that the node modified by cssclass is included in its "children" array.
   // Delete this modified node from its original location.
-  const normalizeCssClassNodes = (nodes, key, value) => {
+  normalizeCssClassNodes = (nodes, key, value) => {
     const searchNode = (node, i, arr) => {
       // If a cssclass node has no children, add the proceeding node to its array of children,
       // thereby appending the specified class to that component.
@@ -95,45 +98,47 @@ const DefaultLayout = ({ children, pageContext }) => {
     nodes.forEach(searchNode);
   };
 
-  const { location, metadata, page, slug, template } = pageContext;
-  const lookup = slug === '/' ? 'index' : slug;
-  const siteTitle = getNestedValue(['title'], metadata) || '';
-  const pageTitle = getPlaintext(getNestedValue(['slugToTitle', lookup], metadata));
-  const Template = getTemplate(template, slug);
-
-  return (
-    <>
-      {/* Anchor-link styling to compensate for navbar height */}
-      <Global
-        styles={css`
-          .contains-headerlink::before {
-            content: '';
-            display: block;
-            height: calc(${theme.navbar.height} + 10px);
-            margin-top: calc((${theme.navbar.height} + 10px) * -1);
-            position: relative;
-            width: 0;
-          }
-        `}
-      />
-      <TabProvider selectors={getNestedValue(['ast', 'options', 'selectors'], page)}>
-        <Widgets
-          location={location}
-          pageOptions={getNestedValue(['ast', 'options'], page)}
-          pageTitle={pageTitle}
-          publishedBranches={getNestedValue(['publishedBranches'], metadata)}
-          slug={slug}
-        >
-          <SiteMetadata siteTitle={siteTitle} pageTitle={pageTitle} />
-          <Template pageContext={pageContext}>
-            <FootnoteContext.Provider value={{ footnotes }}>{children}</FootnoteContext.Provider>
-          </Template>
-        </Widgets>
-      </TabProvider>
-      <Navbar />
-    </>
-  );
-};
+  render() {
+    const { children, pageContext } = this.props;
+    const { location, metadata, page, slug, template } = pageContext;
+    const lookup = slug === '/' ? 'index' : slug;
+    const siteTitle = getNestedValue(['title'], metadata) || '';
+    const pageTitle = getPlaintext(getNestedValue(['slugToTitle', lookup], metadata));
+    const Template = getTemplate(template, slug);
+    return (
+      <>
+        {/* Anchor-link styling to compensate for navbar height */}
+        <Global
+          styles={css`
+            .contains-headerlink::before {
+              content: '';
+              display: block;
+              height: calc(${theme.navbar.height} + 10px);
+              margin-top: calc((${theme.navbar.height} + 10px) * -1);
+              position: relative;
+              width: 0;
+            }
+          `}
+        />
+        <TabProvider selectors={getNestedValue(['ast', 'options', 'selectors'], page)}>
+          <Widgets
+            location={location}
+            pageOptions={getNestedValue(['ast', 'options'], page)}
+            pageTitle={pageTitle}
+            publishedBranches={getNestedValue(['publishedBranches'], metadata)}
+            slug={slug}
+          >
+            <SiteMetadata siteTitle={siteTitle} pageTitle={pageTitle} />
+            <Template pageContext={pageContext}>
+              <FootnoteContext.Provider value={{ footnotes: this.footnotes }}>{children}</FootnoteContext.Provider>
+            </Template>
+          </Widgets>
+        </TabProvider>
+        <Navbar />
+      </>
+    );
+  }
+}
 
 DefaultLayout.propTypes = {
   children: PropTypes.oneOfType([PropTypes.arrayOf(PropTypes.node), PropTypes.node]).isRequired,
@@ -149,5 +154,3 @@ DefaultLayout.propTypes = {
     }).isRequired,
   }).isRequired,
 };
-
-export default DefaultLayout;
