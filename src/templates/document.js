@@ -8,6 +8,7 @@ import Sidebar from '../components/Sidebar';
 import { TabContext } from '../components/tab-context';
 import TabSelectors from '../components/TabSelectors';
 import RightPanel from '../components/RightPanel';
+import useScreenSize from '../hooks/useScreenSize';
 import { useWindowSize } from '../hooks/use-window-size.js';
 import style from '../styles/navigation.module.css';
 import { isBrowser } from '../utils/is-browser.js';
@@ -33,6 +34,8 @@ const Document = ({
   };
 
   const { selectors } = useContext(TabContext);
+  const { isTabletOrMobile } = useScreenSize();
+  const showRightPanel = selectors && !isTabletOrMobile;
 
   return (
     <div className="content">
@@ -69,7 +72,7 @@ const Document = ({
           </div>
         </div>
       </div>
-      {selectors && (
+      {showRightPanel && (
         <RightPanel>
           <TabSelectors />
         </RightPanel>

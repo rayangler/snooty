@@ -26,6 +26,9 @@ const TabSelectors = () => {
         const choices = Object.entries(options).map(([key, value]) => ({ value, text: key }));
         return (
           <Select
+            css={css`
+              min-width: 200px;
+            `}
             choices={choices}
             key={i}
             label={getLabel(name)}

@@ -7,7 +7,6 @@ const RightPanel = ({ children }) => (
     css={css`
       flex-grow: 1;
       margin: 40px 15px;
-      min-width: 200px;
       order: 2;
     `}
   >
